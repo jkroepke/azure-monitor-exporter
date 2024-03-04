@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -16,6 +17,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	versionCollector "github.com/prometheus/client_golang/prometheus/collectors/version"
 	_ "github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/promlog"
@@ -27,15 +30,12 @@ import (
 
 var (
 	subscriptionCache = map[string]any{}
+
+	reg = prometheus.NewRegistry()
 )
 
 func main() {
 	toolkitFlags := webflag.AddFlags(kingpin.CommandLine, ":8080")
-	metricsPath := kingpin.Flag(
-		"web.telemetry-path",
-		"Path under which to expose metrics.",
-	).Default("/metrics").String()
-
 	promlogConfig := &promlog.Config{}
 	flag.AddFlags(kingpin.CommandLine, promlogConfig)
 
@@ -50,15 +50,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	http.Handle(*metricsPath, promhttp.Handler()) // Normal metrics endpoint for SNMP exporter itself.
-	// Endpoint to do SNMP scrapes.
+	// Create non-global registry.
+
+	// Add go runtime metrics and process collectors.
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		versionCollector.NewCollector("azure-monitor-exporter"),
+	)
+
+	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
 	http.HandleFunc("/probe", func(w http.ResponseWriter, r *http.Request) {
 		handler(w, r, logger, cred)
 	})
 
-	landingConfig := web.LandingConfig{
-		Name:        "SNMP Exporter",
-		Description: "Prometheus Exporter for SNMP targets",
+	landingPage, err := web.NewLandingPage(web.LandingConfig{
+		Name:        "azure-monitor-exporter",
+		Description: "Prometheus Exporter for Azure Monitor",
 		Version:     version.Info(),
 		Form: web.LandingForm{
 			Action: "/probe",
@@ -79,16 +87,17 @@ func main() {
 		},
 		Links: []web.LandingLinks{
 			{
-				Address: *metricsPath,
+				Address: "/metrics",
 				Text:    "Metrics",
 			},
 		},
-	}
-	landingPage, err := web.NewLandingPage(landingConfig)
+	})
+
 	if err != nil {
 		_ = level.Error(logger).Log("err", err)
 		os.Exit(1)
 	}
+
 	http.Handle("/", landingPage)
 
 	srv := &http.Server{}
@@ -214,6 +223,81 @@ func handler(w http.ResponseWriter, r *http.Request, logger log.Logger, cred azc
 				return
 			}
 
+			for _, metric := range resp.Values {
+				for _, metricValue := range metric.Values {
+					for _, metricTimeSeries := range metricValue.TimeSeries {
+						prometheusLabels := map[string]string{
+							"subscriptionID": subscriptionID,
+							"region":         *metric.ResourceRegion,
+							"resourceID":     *metric.ResourceID,
+						}
+
+						for _, label := range metricTimeSeries.MetadataValues {
+							prometheusLabels[*label.Name.Value] = *label.Value
+						}
+
+						prometheus.BuildFQName()
+
+						for _, data := range metricTimeSeries.Data {
+							if data.Total != nil {
+								registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+									Namespace:   "azure_monitor",
+									Subsystem:   *metricValue.Type,
+									Name:        fmt.Sprintf("%s_%s_%s", *metricValue.Name.Value, "total", strings.ToLower(string(*metricValue.Unit))),
+									Help:        *metricValue.DisplayDescription,
+									ConstLabels: prometheusLabels,
+								}, func() float64 {
+									return *data.Total
+								}))
+							}
+							if data.Average != nil {
+								registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+									Namespace:   "azure_monitor",
+									Subsystem:   *metricValue.Type,
+									Name:        fmt.Sprintf("%s_%s_%s", *metricValue.Name.Value, "average", strings.ToLower(string(*metricValue.Unit))),
+									Help:        *metricValue.DisplayDescription,
+									ConstLabels: prometheusLabels,
+								}, func() float64 {
+									return *data.Average
+								}))
+							}
+							if data.Count != nil {
+								registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+									Namespace:   "azure_monitor",
+									Subsystem:   *metricValue.Type,
+									Name:        fmt.Sprintf("%s_%s_%s", *metricValue.Name.Value, "count", strings.ToLower(string(*metricValue.Unit))),
+									Help:        *metricValue.DisplayDescription,
+									ConstLabels: prometheusLabels,
+								}, func() float64 {
+									return *data.Count
+								}))
+							}
+							if data.Minimum != nil {
+								registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+									Namespace:   "azure_monitor",
+									Subsystem:   *metricValue.Type,
+									Name:        fmt.Sprintf("%s_%s_%s", *metricValue.Name.Value, "minimum", strings.ToLower(string(*metricValue.Unit))),
+									Help:        *metricValue.DisplayDescription,
+									ConstLabels: prometheusLabels,
+								}, func() float64 {
+									return *data.Minimum
+								}))
+							}
+							if data.Maximum != nil {
+								registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+									Namespace:   "azure_monitor",
+									Subsystem:   *metricValue.Type,
+									Name:        fmt.Sprintf("%s_%s_%s", *metricValue.Name.Value, "maximum", strings.ToLower(string(*metricValue.Unit))),
+									Help:        *metricValue.DisplayDescription,
+									ConstLabels: prometheusLabels,
+								}, func() float64 {
+									return *data.Maximum
+								}))
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 }
