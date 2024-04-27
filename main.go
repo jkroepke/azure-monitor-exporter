@@ -29,30 +29,30 @@ import (
 	webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
 )
 
-var (
-	reg = prometheus.NewRegistry()
-
-	webConfig = webflag.AddFlags(kingpin.CommandLine, ":8080")
-	logger    = log.NewNopLogger()
-)
-
 func main() {
+	reg := prometheus.NewRegistry()
+	webConfig := webflag.AddFlags(kingpin.CommandLine, ":8080")
+
 	kingpin.Version(version.Print("azure-monitor-exporter"))
+
 	promlogConfig := &promlog.Config{}
 	flag.AddFlags(kingpin.CommandLine, promlogConfig)
 	kingpin.HelpFlag.Short('h')
 	kingpin.Parse()
-	logger = promlog.New(promlogConfig)
+
+	logger := promlog.New(promlogConfig)
 
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		_ = level.Error(logger).Log("msg", "Error obtain azure credentials", "err", err)
+
 		os.Exit(1)
 	}
 
 	subscriptions, err := discoverSubscriptions(cred)
 	if err != nil {
 		_ = level.Error(logger).Log("msg", "Error obtain azure credentials", "err", err)
+
 		os.Exit(1)
 	}
 
@@ -76,6 +76,7 @@ func main() {
 		if err != nil {
 			_ = level.Error(logger).Log("msg", "Error creating probe", "err", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
+
 			return
 		}
 
@@ -110,20 +111,22 @@ func main() {
 			},
 		},
 	})
-
 	if err != nil {
 		_ = level.Error(logger).Log("err", err)
+
 		os.Exit(1)
 	}
 
 	http.Handle("/", landingPage)
 
 	srv := &http.Server{
-		ErrorLog: stdlog.New(log.NewStdlibAdapter(logger), "ERROR: ", stdlog.LstdFlags),
+		ReadHeaderTimeout: time.Second * 3,
+		ErrorLog:          stdlog.New(log.NewStdlibAdapter(logger), "ERROR: ", stdlog.LstdFlags),
 	}
 
 	if err := web.ListenAndServe(srv, webConfig, logger); err != nil {
 		_ = level.Error(logger).Log("msg", "Error starting HTTP server", "err", err)
+
 		os.Exit(1)
 	}
 }
@@ -145,6 +148,7 @@ func discoverSubscriptions(cred azcore.TokenCredential) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to advance page: %w", err)
 		}
+
 		for _, v := range page.Value {
 			subscriptions = append(subscriptions, *v.SubscriptionID)
 		}

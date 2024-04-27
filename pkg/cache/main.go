@@ -39,6 +39,7 @@ func (c *Cache[T]) Get(key string) (*T, bool) {
 	value, ok := c.data[key]
 	if !ok || time.Now().After(value.expiration) {
 		delete(c.data, key)
+
 		return nil, false
 	}
 

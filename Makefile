@@ -35,9 +35,6 @@ check: test lint golangci ## Run all checks locally
 update: ## Run dependency updates
 	@go get -u ./...
 	@go mod tidy
-	@cd pkg/plugin && go mod tidy
-	@go work sync
-
 
 .PHONY: build
 ifeq ($(OS),Windows_NT)

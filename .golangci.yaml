@@ -49,9 +49,7 @@ linters-settings:
       - l net.Listener
       - t reflect.Type
       - wg sync.WaitGroup
-      - k *koanf.Koanf
       - mu sync.Mutex
-      - ts oauth2.TokenSource
-      - ca *testcerts.CertificateAuthority
+      - ch chan<- prometheus.Metric
   lll:
     line-length: 160
