@@ -1,4 +1,4 @@
-module github.com/jkropke/azure-monitor-exporter
+module github.com/jkroepke/azure-monitor-exporter
 
 go 1.22
 

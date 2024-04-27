@@ -16,7 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/jkropke/azure-monitor-exporter/pkg/cache"
+	"github.com/jkroepke/azure-monitor-exporter/pkg/cache"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
