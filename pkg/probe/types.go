@@ -7,7 +7,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/monitor/query/azmetrics"
 	"github.com/go-kit/log"
-	"github.com/jkropke/azure-monitor-exporter/pkg/cache"
+	"github.com/jkroepke/azure-monitor-exporter/pkg/cache"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
