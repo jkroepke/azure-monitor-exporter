@@ -69,6 +69,7 @@ func (p *Probe) Collect(ch chan<- prometheus.Metric) {
 
 	if err != nil {
 		ch <- prometheus.MustNewConstMetric(p.scrapeSuccessDesc, prometheus.GaugeValue, 0)
+
 		_ = level.Error(p.logger).Log("msg", "Error querying resources", "err", err)
 
 		return
@@ -81,6 +82,7 @@ func (p *Probe) Collect(ch chan<- prometheus.Metric) {
 
 	if err != nil {
 		ch <- prometheus.MustNewConstMetric(p.scrapeSuccessDesc, prometheus.GaugeValue, 0)
+
 		_ = level.Error(p.logger).Log("msg", "Error fetching metrics", "err", err)
 
 		return
@@ -125,6 +127,8 @@ func (p *Probe) getResources(ctx context.Context) (*Resources, error) {
 }
 
 // queryResources queries the Azure Resource Graph API for resources.
+//
+//nolint:gocognit,cyclop
 func (p *Probe) queryResources(ctx context.Context) (*Resources, error) {
 	client, err := armresourcegraph.NewClient(p.cred, nil)
 	if err != nil {
@@ -156,7 +160,6 @@ func (p *Probe) queryResources(ctx context.Context) (*Resources, error) {
 			Query:         &query,
 			Subscriptions: to.SliceOfPtrs(subscriptions...),
 		}, nil)
-
 		if err != nil {
 			return nil, fmt.Errorf("error querying resource graph '%q': %w", query, err)
 		}
@@ -175,7 +178,7 @@ func (p *Probe) queryResources(ctx context.Context) (*Resources, error) {
 		}
 
 		if len(rows) == 0 {
-			return nil, fmt.Errorf("error querying resource graph: no rows returned")
+			return nil, errors.New("error querying resource graph: no rows returned")
 		}
 
 		row, ok := rows[0].(map[string]any)
@@ -235,6 +238,8 @@ func (p *Probe) queryResources(ctx context.Context) (*Resources, error) {
 }
 
 // fetchMetrics fetches metrics for the resources.
+//
+//nolint:gocognit,cyclop
 func (p *Probe) fetchMetrics(ctx context.Context, resources *Resources, ch chan<- prometheus.Metric) error {
 	var (
 		client *azmetrics.Client
@@ -243,7 +248,7 @@ func (p *Probe) fetchMetrics(ctx context.Context, resources *Resources, ch chan<
 	)
 
 	if resources == nil {
-		return fmt.Errorf("resources is nil")
+		return errors.New("resources is nil")
 	}
 
 	for locations, subscriptions := range *resources {
@@ -272,9 +277,9 @@ func (p *Probe) fetchMetrics(ctx context.Context, resources *Resources, ch chan<
 				var azErr *azcore.ResponseError
 				if errors.As(err, &azErr) {
 					return fmt.Errorf("error querying metrics: %w", azErr)
-				} else {
-					return fmt.Errorf("error querying metrics: %w", err)
 				}
+
+				return fmt.Errorf("error querying metrics: %w", err)
 			}
 
 			for _, metric := range resp.Values {
