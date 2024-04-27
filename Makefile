@@ -7,6 +7,9 @@ WHITE  := $(shell tput -Txterm setaf 7)
 CYAN   := $(shell tput -Txterm setaf 6)
 RESET  := $(shell tput -Txterm sgr0)
 
+# renovate: github=golangci/golangci-lint
+GO_LINT_CI_VERSION := v1.57.2
+
 ##
 # Targets
 ##
@@ -23,16 +26,36 @@ help: ## show this help.
 
 .PHONY: clean
 clean: ## clean builds dir
-	@rm -rf openvpn-auth-oauth2 dist/
+	@rm -rf openvpn-auth-oauth2 openvpn-auth-oauth2.exe dist/
 
 .PHONY: check
 check: test lint golangci ## Run all checks locally
 
+.PHONY: update
+update: ## Run dependency updates
+	@go get -u ./...
+	@go mod tidy
+	@cd pkg/plugin && go mod tidy
+	@go work sync
+
+
 .PHONY: build
-build: openvpn-auth-oauth2  ## Build openvpn-auth-oauth2
+ifeq ($(OS),Windows_NT)
+build: clean openvpn-auth-oauth2.exe  ## Build openvpn-auth-oauth2
+else
+build: clean openvpn-auth-oauth2
+endif
+
 
 openvpn-auth-oauth2:
 	@go build -o openvpn-auth-oauth2 .
+
+openvpn-auth-oauth2.exe:
+	@go build -o openvpn-auth-oauth2.exe .
+
+.Phony: build-debug
+build-debug: ## Build openvpn-auth-oauth2 with debug flags
+	@go build -gcflags="-l=4 -m=2" -o openvpn-auth-oauth2 .
 
 .PHONY: test
 test:  ## Test openvpn-auth-oauth2
@@ -42,24 +65,40 @@ test:  ## Test openvpn-auth-oauth2
 lint: golangci  ## Run linter
 
 .PHONY: format
-format: fmt goimports gofumpt golangci-fix ## Format source code
+format: fmt goimports gogci gofumpt gowsl goperfsprint golangci-fix ## Format source code
 
 .PHONY: fmt
 fmt:
 	@go fmt ./...
 
+.PHONY: gogci
+gogci:
+	@-go run github.com/daixiang0/gci@latest write .
+
 .PHONY: gofumpt
 gofumpt:
-	@go run mvdan.cc/gofumpt@latest -l -w .
+	@-go run mvdan.cc/gofumpt@latest -l -w .
 
 .PHONY: goimports
 goimports:
-	@go run golang.org/x/tools/cmd/goimports@latest -l -w .
+	@-go run golang.org/x/tools/cmd/goimports@latest -l -w .
+
+.PHONY: gowsl
+gowsl:
+	@-go run github.com/bombsimon/wsl/v4/cmd...@latest -strict-append -test=true -fix ./...
+
+.PHONY: goperfsprint
+goperfsprint:
+	@-go run github.com/catenacyber/perfsprint@latest -fix ./...
 
 .PHONY: golangci
 golangci:
-	@go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.1 run .
+	@go run github.com/golangci/golangci-lint/cmd/golangci-lint@${GO_LINT_CI_VERSION} run ./...
 
 .PHONY: golangci-fix
 golangci-fix:
-	@go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.1 run . --fix
+	@go run github.com/golangci/golangci-lint/cmd/golangci-lint@${GO_LINT_CI_VERSION} run ./... --fix
+
+.PHONY: 3rdpartylicenses
+3rdpartylicenses:
+	@go run github.com/google/go-licenses@latest save . --save_path=3rdpartylicenses

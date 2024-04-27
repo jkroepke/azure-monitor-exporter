@@ -1,0 +1,57 @@
+linters:
+  enable-all: true
+  disable:
+    - deadcode
+    - scopelint
+    - exhaustivestruct
+    - structcheck
+    - interfacer
+    - maligned
+    - golint
+    - nosnakecase
+    - ifshort
+    - varcheck
+    - depguard
+    - exhaustruct
+    - gomnd
+    - funlen
+    - ireturn
+    - goerr113
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - lll
+        - gocognit
+        - cyclop
+        - wrapcheck
+        - maintidx
+        - dogsled
+        - contextcheck
+        - dupword
+        - dupl
+        - funlen
+
+linters-settings:
+  varnamelen:
+    ignore-names:
+      - tt
+    ignore-decls:
+      - i int
+      - a ...any
+      - err error
+      - ok bool
+      - id string
+      - w http.ResponseWriter
+      - rt http.RoundTripper
+      - r *http.Request
+      - l net.Listener
+      - t reflect.Type
+      - wg sync.WaitGroup
+      - k *koanf.Koanf
+      - mu sync.Mutex
+      - ts oauth2.TokenSource
+      - ca *testcerts.CertificateAuthority
+  lll:
+    line-length: 160
