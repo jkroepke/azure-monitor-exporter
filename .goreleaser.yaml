@@ -1,0 +1,75 @@
+builds:
+  - binary: azure-metrics-exporter
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    tags:
+      - netgo
+      - static_build
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/prometheus/common/version.Version={{.Version}}
+        -X github.com/prometheus/common/version.Revision={{.FullCommit}}
+        -X github.com/prometheus/common/version.Branch={{.Branch}}
+        -X github.com/prometheus/common/version.BuildDate={{.Date}}
+archives:
+  - format: tar.xz
+    files:
+      - LICENSE.txt
+      - 3rdpartylicenses/**/*
+
+dockers:
+  - image_templates:
+      - "ghcr.io/jkroepke/azure-metrics-exporter:latest-amd64"
+      - "ghcr.io/jkroepke/azure-metrics-exporter:{{ .Version }}-amd64"
+    use: buildx
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--platform=linux/amd64"
+  - image_templates:
+      - "ghcr.io/jkroepke/azure-metrics-exporter:latest-arm64v8"
+      - "ghcr.io/jkroepke/azure-metrics-exporter:{{ .Version }}-arm64v8"
+    use: buildx
+    goarch: arm64
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--platform=linux/arm64/v8"
+docker_manifests:
+  - name_template: "ghcr.io/jkroepke/azure-metrics-exporter:latest"
+    image_templates:
+      - "ghcr.io/jkroepke/azure-metrics-exporter:latest-amd64"
+      - "ghcr.io/jkroepke/azure-metrics-exporter:latest-arm64v8"
+  - name_template: "ghcr.io/jkroepke/azure-metrics-exporter:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/jkroepke/azure-metrics-exporter:{{ .Version }}-amd64"
+      - "ghcr.io/jkroepke/azure-metrics-exporter:{{ .Version }}-arm64v8"
+      
+report_sizes: true
+
+metadata:
+  mod_timestamp: "{{ .CommitTimestamp }}"
+
+gomod:
+  proxy: true
+
+release:
+  prerelease: auto
+
+changelog:
+  use: github-native
