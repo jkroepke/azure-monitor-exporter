@@ -42,6 +42,9 @@ dockers:
       - "--label=org.opencontainers.image.title={{.ProjectName}}"
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
       - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+      - "--label=org.opencontainers.image.source=https://github.com/jkroepke/azure-monitor-exporter"
+      - '--label=org.opencontainers.image.description="A simple prometheus exporter to provide metrics from Azure Monitor in Prometheus format"'
       - "--platform=linux/amd64"
   - image_templates:
       - "ghcr.io/jkroepke/azure-metrics-exporter:latest-arm64v8"
@@ -54,7 +57,10 @@ dockers:
       - "--label=org.opencontainers.image.title={{.ProjectName}}"
       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
       - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source=https://github.com/jkroepke/azure-monitor-exporter"
+      - '--label=org.opencontainers.image.description="A simple prometheus exporter to provide metrics from Azure Monitor in Prometheus format"'
       - "--platform=linux/arm64/v8"
+
 docker_manifests:
   - name_template: "ghcr.io/jkroepke/azure-metrics-exporter:latest"
     image_templates:
