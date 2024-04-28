@@ -21,7 +21,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-func New(logger log.Logger, httpClient *http.Client, request *http.Request, cred azcore.TokenCredential, subscriptions []string, queryCache *cache.Cache[Resources]) (*Probe, error) {
+func New(
+	logger log.Logger,
+	httpClient *http.Client,
+	request *http.Request,
+	cred azcore.TokenCredential,
+	subscriptions []string,
+	queryCache *cache.Cache[Resources],
+) (*Probe, error) {
 	probe := &Probe{
 		request:    request,
 		logger:     logger,

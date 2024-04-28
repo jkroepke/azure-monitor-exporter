@@ -201,9 +201,11 @@ func TestProbe(t *testing.T) {
 			}
 
 			require.NoError(t, err)
+
 			metricsText := sb.String()
 
 			assert.Contains(t, metricsText, "azure_monitor_scrape_collector_success 1")
+
 			for _, expectedMetric := range tc.expectedMetrics {
 				assert.Contains(t, metricsText, expectedMetric)
 			}

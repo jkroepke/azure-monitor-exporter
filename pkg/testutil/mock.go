@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,7 +14,7 @@ import (
 
 const (
 	// MockOpenIDConfiguration is a mock OpenID configuration response
-	//language=JSON
+	// language=JSON.
 	MockOpenIDConfiguration = `{
 	  "authorization_endpoint":"https://login.microsoftonline.com/mock/oauth2/v2.0/authorize",
 	  "issuer":"https://login.microsoftonline.com/{tenantid}/v2.0",
@@ -22,7 +23,8 @@ const (
 	}`
 
 	// MockTokenResponse is a mock token response
-	//language=JSON
+	//nolint:gosec // This is a mock token response.
+	// language=JSON.
 	MockTokenResponse = `{
 	  "access_token": "mock_access_token",
 	  "expires_in": 3599,
@@ -32,7 +34,11 @@ const (
 	}`
 )
 
-func MockTransport(next http.RoundTripper, resourceGraphResponse armresourcegraph.QueryResponse, metricsResponse azmetrics.MetricResults) promhttp.RoundTripperFunc {
+func MockTransport(
+	next http.RoundTripper,
+	resourceGraphResponse armresourcegraph.QueryResponse,
+	metricsResponse azmetrics.MetricResults,
+) promhttp.RoundTripperFunc {
 	return func(req *http.Request) (*http.Response, error) {
 		switch req.URL.Host {
 		case "login.microsoftonline.com":
@@ -41,21 +47,20 @@ func MockTransport(next http.RoundTripper, resourceGraphResponse armresourcegrap
 
 			switch req.URL.Path {
 			case "/mock/v2.0/.well-known/openid-configuration":
-				_, _ = recorder.Write([]byte(MockOpenIDConfiguration))
+				_, _ = recorder.WriteString(MockOpenIDConfiguration)
 			case "/mock/oauth2/v2.0/token":
-				_, _ = recorder.Write([]byte(MockTokenResponse))
+				_, _ = recorder.WriteString(MockTokenResponse)
 			}
 
 			return recorder.Result(), nil
 		case "management.azure.com":
-			switch req.URL.Path {
-			case "/providers/Microsoft.ResourceGraph/resources":
+			if req.URL.Path == "/providers/Microsoft.ResourceGraph/resources" {
 				recorder := httptest.NewRecorder()
 				recorder.WriteHeader(http.StatusOK)
 
 				resp, err := json.Marshal(resourceGraphResponse)
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to marshal resource graph response: %w", err)
 				}
 
 				_, _ = recorder.Write(resp)
@@ -69,7 +74,7 @@ func MockTransport(next http.RoundTripper, resourceGraphResponse armresourcegrap
 
 				resp, err := json.Marshal(metricsResponse)
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("failed to marshal metrics response: %w", err)
 				}
 
 				_, _ = recorder.Write(resp)
