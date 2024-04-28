@@ -2,6 +2,7 @@ package tracing
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -54,6 +55,16 @@ func New(registry prometheus.Registerer, transport http.RoundTripper) *AzureSDKS
 func (s *AzureSDKStatistics) scrapeRateLimits(next http.RoundTripper) promhttp.RoundTripperFunc {
 	return func(req *http.Request) (*http.Response, error) {
 		resp, err := next.RoundTrip(req)
+
+		if strings.HasSuffix(req.Host, "metrics.monitor.azure.com") {
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+
+			_ = body
+
+			return nil, err
+		}
+
 		if err != nil {
 			return resp, err
 		}
