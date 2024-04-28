@@ -37,12 +37,14 @@ linters-settings:
   varnamelen:
     ignore-names:
       - tt
+      - tc
     ignore-decls:
       - i int
       - a ...any
       - err error
       - ok bool
       - id string
+      - sb *strings.Builder
       - w http.ResponseWriter
       - rt http.RoundTripper
       - r *http.Request

@@ -27,7 +27,7 @@ jobs:
           go-version-file: 'go.mod'
 
       - run: go build
-      - run: go test ./... -timeout 20s -race -covermode=atomic -coverprofile=coverage.out -coverpkg=./...
+      - run: go test ./... -timeout 20s -race -covermode=atomic -coverprofile=coverage.out
       - run: go test ./... -timeout 20s -bench . -benchmem -count 3
 
       - name: go build (with goreleaser)
