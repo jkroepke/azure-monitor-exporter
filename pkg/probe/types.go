@@ -18,6 +18,8 @@ type Probe struct {
 	logger  log.Logger
 	cred    azcore.TokenCredential
 
+	httpClient *http.Client
+
 	subscriptions []string
 	config        *Config
 

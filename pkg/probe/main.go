@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/monitor/query/azmetrics"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
@@ -20,11 +21,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-func New(request *http.Request, logger log.Logger, cred azcore.TokenCredential, subscriptions []string, queryCache *cache.Cache[Resources]) (*Probe, error) {
+func New(logger log.Logger, httpClient *http.Client, request *http.Request, cred azcore.TokenCredential, subscriptions []string, queryCache *cache.Cache[Resources]) (*Probe, error) {
 	probe := &Probe{
-		request: request,
-		logger:  logger,
-		cred:    cred,
+		request:    request,
+		logger:     logger,
+		cred:       cred,
+		httpClient: httpClient,
 
 		subscriptions: subscriptions,
 		queryCache:    queryCache,
@@ -68,6 +70,7 @@ func (p *Probe) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(p.scrapeDurationDesc, prometheus.GaugeValue, time.Since(startTime).Seconds(), "query_resources")
 
 	if err != nil {
+		ch <- prometheus.NewInvalidMetric(prometheus.NewInvalidDesc(err), err)
 		ch <- prometheus.MustNewConstMetric(p.scrapeSuccessDesc, prometheus.GaugeValue, 0)
 
 		_ = level.Error(p.logger).Log("msg", "Error querying resources", "err", err)
@@ -81,6 +84,7 @@ func (p *Probe) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(p.scrapeDurationDesc, prometheus.GaugeValue, time.Since(startTime).Seconds(), "fetch_metrics")
 
 	if err != nil {
+		ch <- prometheus.NewInvalidMetric(prometheus.NewInvalidDesc(err), err)
 		ch <- prometheus.MustNewConstMetric(p.scrapeSuccessDesc, prometheus.GaugeValue, 0)
 
 		_ = level.Error(p.logger).Log("msg", "Error fetching metrics", "err", err)
@@ -130,7 +134,11 @@ func (p *Probe) getResources(ctx context.Context) (*Resources, error) {
 //
 //nolint:gocognit,cyclop
 func (p *Probe) queryResources(ctx context.Context) (*Resources, error) {
-	client, err := armresourcegraph.NewClient(p.cred, nil)
+	client, err := armresourcegraph.NewClient(p.cred, &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: p.httpClient,
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("error creating resource graph client: %w", err)
 	}
@@ -254,96 +262,114 @@ func (p *Probe) fetchMetrics(ctx context.Context, resources *Resources, ch chan<
 	for locations, subscriptions := range *resources {
 		metricsEndpoint := fmt.Sprintf("https://%s.metrics.monitor.azure.com", locations)
 
-		client, err = azmetrics.NewClient(metricsEndpoint, p.cred, nil)
+		client, err = azmetrics.NewClient(metricsEndpoint, p.cred, &azmetrics.ClientOptions{
+			ClientOptions: azcore.ClientOptions{
+				Transport: p.httpClient,
+			},
+		})
 		if err != nil {
 			return fmt.Errorf("error creating metrics client: %w", err)
 		}
 
 		for subscriptionID, resourceIDs := range subscriptions {
-			metricNamespace := p.config.ResourceType
-			if p.config.MetricNamespace != "" {
-				metricNamespace = p.config.MetricNamespace
-			}
-
-			resp, err = client.QueryResources(
-				ctx,
-				subscriptionID,
-				metricNamespace,
-				p.config.MetricNames,
-				azmetrics.ResourceIDList{ResourceIDs: resourceIDs},
-				&p.config.QueryResourcesOptions,
-			)
-			if err != nil {
-				var azErr *azcore.ResponseError
-				if errors.As(err, &azErr) {
-					return fmt.Errorf("error querying metrics: %w", azErr)
+			for {
+				maxResourceIDs := 50
+				if len(resourceIDs) < maxResourceIDs {
+					maxResourceIDs = len(resourceIDs)
 				}
 
-				return fmt.Errorf("error querying metrics: %w", err)
-			}
+				requestResourceIDs := resourceIDs[:maxResourceIDs]
+				resourceIDs = resourceIDs[maxResourceIDs:]
 
-			for _, metric := range resp.Values {
-				for _, metricValue := range metric.Values {
-					for _, metricTimeSeries := range metricValue.TimeSeries {
-						if len(metricTimeSeries.Data) == 0 {
-							continue
-						}
+				metricNamespace := p.config.ResourceType
+				if p.config.MetricNamespace != "" {
+					metricNamespace = p.config.MetricNamespace
+				}
 
-						prometheusLabels := map[string]string{
-							"subscriptionID": subscriptionID,
-							"region":         *metric.ResourceRegion,
-							"resourceID":     *metric.ResourceID,
-						}
+				resp, err = client.QueryResources(
+					ctx,
+					subscriptionID,
+					metricNamespace,
+					p.config.MetricNames,
+					azmetrics.ResourceIDList{ResourceIDs: requestResourceIDs},
+					&p.config.QueryResourcesOptions,
+				)
+				if err != nil {
+					var azErr *azcore.ResponseError
+					if errors.As(err, &azErr) {
+						return fmt.Errorf("error querying metrics: %w", azErr)
+					}
 
-						for _, label := range metricTimeSeries.MetadataValues {
-							prometheusLabels[*label.Name.Value] = *label.Value
-						}
+					return fmt.Errorf("error querying metrics: %w", err)
+				}
 
-						latestTimestamp := time.Time{}
-						latestMetric := map[string]*float64{
-							"total":   nil,
-							"average": nil,
-							"count":   nil,
-							"minimum": nil,
-							"maximum": nil,
-						}
-
-						for _, data := range metricTimeSeries.Data {
-							if data.TimeStamp.After(latestTimestamp) {
-								latestTimestamp = *data.TimeStamp
-								latestMetric["total"] = data.Total
-								latestMetric["average"] = data.Average
-								latestMetric["count"] = data.Count
-								latestMetric["minimum"] = data.Minimum
-								latestMetric["maximum"] = data.Maximum
-							}
-						}
-
-						for metricType, value := range latestMetric {
-							if value == nil {
+				for _, metric := range resp.Values {
+					for _, metricValue := range metric.Values {
+						for _, metricTimeSeries := range metricValue.TimeSeries {
+							if len(metricTimeSeries.Data) == 0 {
 								continue
 							}
 
-							ch <- prometheus.MustNewConstMetric(
-								prometheus.NewDesc(
-									prometheus.BuildFQName(
-										"azure_monitor",
-										strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(*metric.Namespace), ".", "_"), "/", "_"),
-										fmt.Sprintf("%s_%s_%s",
-											strings.ToLower(*metricValue.Name.Value),
-											metricType,
-											strings.ToLower(string(*metricValue.Unit)),
+							prometheusLabels := map[string]string{
+								"subscriptionID": subscriptionID,
+								"region":         *metric.ResourceRegion,
+								"resourceID":     *metric.ResourceID,
+							}
+
+							for _, label := range metricTimeSeries.MetadataValues {
+								prometheusLabels[*label.Name.Value] = *label.Value
+							}
+
+							latestTimestamp := time.Time{}
+							latestMetric := map[string]*float64{
+								"total":   nil,
+								"average": nil,
+								"count":   nil,
+								"minimum": nil,
+								"maximum": nil,
+							}
+
+							for _, data := range metricTimeSeries.Data {
+								if data.TimeStamp.After(latestTimestamp) {
+									latestTimestamp = *data.TimeStamp
+									latestMetric["total"] = data.Total
+									latestMetric["average"] = data.Average
+									latestMetric["count"] = data.Count
+									latestMetric["minimum"] = data.Minimum
+									latestMetric["maximum"] = data.Maximum
+								}
+							}
+
+							for metricType, value := range latestMetric {
+								if value == nil {
+									continue
+								}
+
+								ch <- prometheus.MustNewConstMetric(
+									prometheus.NewDesc(
+										prometheus.BuildFQName(
+											"azure_monitor",
+											strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(*metric.Namespace), ".", "_"), "/", "_"),
+											fmt.Sprintf("%s_%s_%s",
+												strings.ToLower(*metricValue.Name.Value),
+												metricType,
+												strings.ToLower(string(*metricValue.Unit)),
+											),
 										),
+										fmt.Sprintf("%s: %s", *metricValue.Name.LocalizedValue, *metricValue.DisplayDescription),
+										nil,
+										prometheusLabels,
 									),
-									fmt.Sprintf("%s: %s", *metricValue.Name.LocalizedValue, *metricValue.DisplayDescription),
-									nil,
-									prometheusLabels,
-								),
-								prometheus.GaugeValue,
-								*value,
-							)
+									prometheus.GaugeValue,
+									*value,
+								)
+							}
 						}
 					}
+				}
+
+				if len(resourceIDs) == 0 {
+					break
 				}
 			}
 		}

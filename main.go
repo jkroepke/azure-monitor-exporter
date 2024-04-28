@@ -2,14 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	stdlog "log"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/subscription/armsubscription"
 	"github.com/alecthomas/kingpin/v2"
@@ -17,6 +22,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/jkroepke/azure-monitor-exporter/pkg/cache"
 	"github.com/jkroepke/azure-monitor-exporter/pkg/probe"
+	"github.com/jkroepke/azure-monitor-exporter/pkg/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	versionCollector "github.com/prometheus/client_golang/prometheus/collectors/version"
@@ -40,16 +46,26 @@ func main() {
 	kingpin.HelpFlag.Short('h')
 	kingpin.Parse()
 
+	exporterTracing := tracing.New(reg, http.DefaultTransport)
 	logger := promlog.New(promlogConfig)
+	httpClient := &http.Client{
+		Transport: exporterTracing.Transport,
+	}
+	cred, err := azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: httpClient,
+		},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		_ = level.Error(logger).Log("msg", "Error obtain azure credentials", "err", err)
 
 		os.Exit(1)
 	}
 
-	subscriptions, err := discoverSubscriptions(cred)
+	subscriptions, err := discoverSubscriptions(ctx, cred, httpClient)
 	if err != nil {
 		_ = level.Error(logger).Log("msg", "Error obtain azure credentials", "err", err)
 
@@ -72,7 +88,7 @@ func main() {
 		ErrorLog: stdlog.New(log.NewStdlibAdapter(logger), "ERROR: ", stdlog.LstdFlags),
 	}))
 	http.HandleFunc("/probe", func(w http.ResponseWriter, r *http.Request) {
-		probeCollector, err := probe.New(r, logger, cred, subscriptions, queryCache)
+		probeCollector, err := probe.New(logger, httpClient, r, cred, subscriptions, queryCache)
 		if err != nil {
 			_ = level.Error(logger).Log("msg", "Error creating probe", "err", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -100,7 +116,37 @@ func main() {
 					Label:       "Resource Graph Query",
 					Type:        "text",
 					Name:        "query",
-					Placeholder: "resources | where type == 'microsoft.compute/virtualmachines'",
+					Placeholder: "resources",
+				},
+				{
+					Label:       "Resource Graph Query",
+					Type:        "text",
+					Name:        "resourceType",
+					Placeholder: "microsoft.compute/virtualmachines",
+				},
+				{
+					Label:       "Metric Names",
+					Type:        "text",
+					Name:        "metricName",
+					Placeholder: "vmAvailabilityMetric",
+				},
+				{
+					Label:       "Interval",
+					Type:        "text",
+					Name:        "interval",
+					Placeholder: "PT5M",
+				},
+				{
+					Label:       "Interval",
+					Type:        "text",
+					Name:        "interval",
+					Placeholder: "PT5M",
+				},
+				{
+					Label:       "Cache",
+					Type:        "text",
+					Name:        "queryCacheExpiration",
+					Placeholder: "60s",
 				},
 			},
 		},
@@ -124,20 +170,41 @@ func main() {
 		ErrorLog:          stdlog.New(log.NewStdlibAdapter(logger), "ERROR: ", stdlog.LstdFlags),
 	}
 
+	// graceful shutdown on SIGTERM or SIGINT signal
+	go func() {
+		termCh := make(chan os.Signal, 1)
+		signal.Notify(termCh, os.Interrupt, syscall.SIGTERM)
+		<-termCh
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		_ = srv.Shutdown(ctx)
+	}()
+
 	if err := web.ListenAndServe(srv, webConfig, logger); err != nil {
+		if errors.Is(err, http.ErrServerClosed) {
+			return
+		}
+
 		_ = level.Error(logger).Log("msg", "Error starting HTTP server", "err", err)
 
 		os.Exit(1)
 	}
 }
 
-func discoverSubscriptions(cred azcore.TokenCredential) ([]string, error) {
-	subscriptionClient, err := armsubscription.NewSubscriptionsClient(cred, nil)
+func discoverSubscriptions(ctx context.Context, cred azcore.TokenCredential, httpClient *http.Client) ([]string, error) {
+	subscriptionClient, err := armsubscription.NewSubscriptionsClient(cred, &arm.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: httpClient,
+		},
+	})
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to create subscription client: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	subscriptions := make([]string, 0)
