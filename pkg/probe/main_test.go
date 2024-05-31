@@ -89,7 +89,7 @@ func TestProbe(t *testing.T) {
 				},
 			},
 			expectedMetrics: []string{
-				`azure_monitor_microsoft_compute_virtualmachines_vmavailabilitymetric_average_count{region="westeurope",resourceID="/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock/providers/Microsoft.Compute/virtualMachines/vm1",subscriptionID="00000000-0000-0000-0000-000000000000"} 1`,
+				`azure_monitor_microsoft_compute_virtualmachines_vmavailabilitymetric_average_count{region="westeurope",resourceID="/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock/providers/Microsoft.Compute/virtualMachines/vm1",subscription_id="00000000-0000-0000-0000-000000000000"} 1`,
 			},
 		},
 		{
@@ -159,7 +159,7 @@ func TestProbe(t *testing.T) {
 				}
 			}(),
 			expectedMetrics: []string{
-				`azure_monitor_microsoft_compute_virtualmachines_vmavailabilitymetric_average_count{region="westeurope",resourceID="/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock/providers/Microsoft.Compute/virtualMachines/vm1",subscriptionID="00000000-0000-0000-0000-000000000000"} 1`,
+				`azure_monitor_microsoft_compute_virtualmachines_vmavailabilitymetric_average_count{region="westeurope",resourceID="/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock/providers/Microsoft.Compute/virtualMachines/vm1",subscription_id="00000000-0000-0000-0000-000000000000"} 1`,
 			},
 		},
 	}
