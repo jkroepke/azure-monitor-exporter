@@ -5,6 +5,9 @@ linters:
     - exhaustruct
     - gomnd
     - funlen
+    - mnd
+    - err113
+    - execinquery
 
 issues:
   exclude-rules:
@@ -20,9 +23,6 @@ issues:
         - dupword
         - dupl
         - funlen
-        - mnd
-        - err113
-        - execinquery
 
 linters-settings:
   varnamelen:
