@@ -39,7 +39,7 @@ func New(registry prometheus.Registerer, transport http.RoundTripper) *AzureSDKS
 		},
 		[]string{
 			"endpoint",
-			"subscriptionID",
+			"subscription_id",
 			"scope",
 			"type",
 		},
@@ -65,53 +65,53 @@ func (s *AzureSDKStatistics) scrapeRateLimits(next http.RoundTripper) promhttp.R
 			hostname = strings.Join(hostnameParts[len(hostnameParts)-3:], ".")
 		}
 
-		subscriptionID := ""
+		subscription_id := ""
 		if matches := subscriptionRegexp.FindStringSubmatch(req.URL.RawPath); len(matches) >= 2 {
-			subscriptionID = strings.ToLower(matches[1])
+			subscription_id = strings.ToLower(matches[1])
 		}
 
 		if strings.HasPrefix(req.URL.RawPath, "/providers/microsoft.resourcegraph/") {
-			s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
+			s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
 				"x-ms-user-quota-remaining", "resourcegraph", "quota")
 		}
 
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
 			"x-ms-ratelimit-remaining-microsoft.consumption-tenant-requests", "consumption", "tenant-requests")
 
 		// subscription rate limits
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
 			"x-ms-ratelimit-remaining-subscription-reads", "subscription", "reads")
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
 			"x-ms-ratelimit-remaining-subscription-writes", "subscription", "writes")
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
 			"x-ms-ratelimit-remaining-subscription-resource-requests", "subscription", "resourceRequests")
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
 			"x-ms-ratelimit-remaining-subscription-resource-entities-read", "subscription", "resource-entities-read")
 
 		// tenant rate limits
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
 			"x-ms-ratelimit-remaining-tenant-reads", "tenant", "reads")
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
 			"x-ms-ratelimit-remaining-tenant-writes", "tenant", "writes")
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
 			"x-ms-ratelimit-remaining-tenant-resource-requests", "tenant", "resource-requests")
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
 			"x-ms-ratelimit-remaining-tenant-resource-entities-read", "tenant", "resource-entities-read")
 
 		return resp, nil
 	}
 }
 
-func (s *AzureSDKStatistics) collectAzureAPIRateLimitMetric(r *http.Response, hostname, subscriptionID, headerName, scopeLabel, typeLabel string) {
+func (s *AzureSDKStatistics) collectAzureAPIRateLimitMetric(r *http.Response, hostname, subscription_id, headerName, scopeLabel, typeLabel string) {
 	headerValue := r.Header.Get(headerName)
 
 	if value, err := strconv.ParseInt(headerValue, 10, 64); err == nil {
 		// single value
 		s.AzureAPIRateLimit.With(prometheus.Labels{
-			"endpoint":       hostname,
-			"subscriptionID": subscriptionID,
-			"scope":          scopeLabel,
-			"type":           typeLabel,
+			"endpoint":        hostname,
+			"subscription_id": subscription_id,
+			"scope":           scopeLabel,
+			"type":            typeLabel,
 		}).Set(float64(value))
 	} else if strings.Contains(headerValue, ":") {
 		// multi value (comma separated eg "QueriesPerHour:496,QueriesPerMin:37,QueriesPer10Sec:11")
@@ -122,10 +122,10 @@ func (s *AzureSDKStatistics) collectAzureAPIRateLimitMetric(r *http.Response, ho
 
 				if value, err = strconv.ParseInt(quotaValue, 10, 64); err == nil {
 					s.AzureAPIRateLimit.With(prometheus.Labels{
-						"endpoint":       hostname,
-						"subscriptionID": subscriptionID,
-						"scope":          scopeLabel,
-						"type":           fmt.Sprintf("%s.%s", typeLabel, quotaName),
+						"endpoint":        hostname,
+						"subscription_id": subscription_id,
+						"scope":           scopeLabel,
+						"type":            fmt.Sprintf("%s.%s", typeLabel, quotaName),
 					}).Set(float64(value))
 				}
 			}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	azlog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/subscription/armsubscription"
 	"github.com/alecthomas/kingpin/v2"
@@ -34,9 +35,14 @@ import (
 	webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
 )
 
+var (
+	webConfig  = webflag.AddFlags(kingpin.CommandLine, ":8080")
+	logRetries = kingpin.Flag("log.retries", "Log Azure REST API retries").Default("false").Envar("AZURE_MONITOR_EXPORTER_LOG_RETRIES").Bool()
+	logger     = log.NewNopLogger()
+)
+
 func Run() int {
 	reg := prometheus.NewRegistry()
-	webConfig := webflag.AddFlags(kingpin.CommandLine, ":8080")
 
 	kingpin.Version(version.Print("azure-monitor-exporter"))
 
@@ -45,10 +51,27 @@ func Run() int {
 	kingpin.HelpFlag.Short('h')
 	kingpin.Parse()
 
+	logger = promlog.New(promlogConfig)
+
 	exporterTracing := tracing.New(reg, http.DefaultTransport)
-	logger := promlog.New(promlogConfig)
 	httpClient := &http.Client{
 		Transport: exporterTracing.Transport,
+	}
+
+	if *logRetries == true {
+		azlog.SetEvents(azlog.EventRetryPolicy)
+		azlog.SetListener(func(cls azlog.Event, msg string) {
+			if cls == azlog.EventRetryPolicy {
+				if strings.HasPrefix(msg, "response 2") ||
+					strings.HasPrefix(msg, "=====> Try=") ||
+					strings.HasPrefix(msg, "End Try") ||
+					msg == "exit due to non-retriable status code" {
+					return
+				}
+
+				_ = level.Warn(logger).Log("msg", msg)
+			}
+		})
 	}
 
 	cred, err := azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{
