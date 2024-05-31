@@ -58,7 +58,7 @@ func Run() int {
 		Transport: exporterTracing.Transport,
 	}
 
-	if *logRetries == true {
+	if *logRetries {
 		azlog.SetEvents(azlog.EventRetryPolicy)
 		azlog.SetListener(func(cls azlog.Event, msg string) {
 			if cls == azlog.EventRetryPolicy {
