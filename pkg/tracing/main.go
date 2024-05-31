@@ -102,14 +102,14 @@ func (s *AzureSDKStatistics) scrapeRateLimits(next http.RoundTripper) promhttp.R
 	}
 }
 
-func (s *AzureSDKStatistics) collectAzureAPIRateLimitMetric(r *http.Response, hostname, subscription_id, headerName, scopeLabel, typeLabel string) {
+func (s *AzureSDKStatistics) collectAzureAPIRateLimitMetric(r *http.Response, hostname, subscriptionID, headerName, scopeLabel, typeLabel string) {
 	headerValue := r.Header.Get(headerName)
 
 	if value, err := strconv.ParseInt(headerValue, 10, 64); err == nil {
 		// single value
 		s.AzureAPIRateLimit.With(prometheus.Labels{
 			"endpoint":        hostname,
-			"subscription_id": subscription_id,
+			"subscription_id": subscriptionID,
 			"scope":           scopeLabel,
 			"type":            typeLabel,
 		}).Set(float64(value))
@@ -123,7 +123,7 @@ func (s *AzureSDKStatistics) collectAzureAPIRateLimitMetric(r *http.Response, ho
 				if value, err = strconv.ParseInt(quotaValue, 10, 64); err == nil {
 					s.AzureAPIRateLimit.With(prometheus.Labels{
 						"endpoint":        hostname,
-						"subscription_id": subscription_id,
+						"subscription_id": subscriptionID,
 						"scope":           scopeLabel,
 						"type":            fmt.Sprintf("%s.%s", typeLabel, quotaName),
 					}).Set(float64(value))
