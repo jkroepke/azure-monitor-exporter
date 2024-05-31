@@ -2,7 +2,7 @@ name: CI
 
 env:
   # renovate: github=golangci/golangci-lint
-  GO_LINT_CI_VERSION: v1.57.2
+  GO_LINT_CI_VERSION: v1.59.0
 
 on:
   workflow_dispatch:
