@@ -22,6 +22,7 @@ issues:
         - funlen
         - mnd
         - err113
+        - execinquery
 
 linters-settings:
   varnamelen:
