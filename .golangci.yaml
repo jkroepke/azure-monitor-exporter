@@ -1,22 +1,10 @@
 linters:
   enable-all: true
   disable:
-    - deadcode
-    - scopelint
-    - exhaustivestruct
-    - structcheck
-    - interfacer
-    - maligned
-    - golint
-    - nosnakecase
-    - ifshort
-    - varcheck
     - depguard
     - exhaustruct
     - gomnd
     - funlen
-    - ireturn
-    - goerr113
 
 issues:
   exclude-rules:
