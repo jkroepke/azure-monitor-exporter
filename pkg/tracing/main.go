@@ -65,37 +65,37 @@ func (s *AzureSDKStatistics) scrapeRateLimits(next http.RoundTripper) promhttp.R
 			hostname = strings.Join(hostnameParts[len(hostnameParts)-3:], ".")
 		}
 
-		subscription_id := ""
+		subscriptionID := ""
 		if matches := subscriptionRegexp.FindStringSubmatch(req.URL.RawPath); len(matches) >= 2 {
-			subscription_id = strings.ToLower(matches[1])
+			subscriptionID = strings.ToLower(matches[1])
 		}
 
 		if strings.HasPrefix(req.URL.RawPath, "/providers/microsoft.resourcegraph/") {
-			s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
+			s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
 				"x-ms-user-quota-remaining", "resourcegraph", "quota")
 		}
 
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
 			"x-ms-ratelimit-remaining-microsoft.consumption-tenant-requests", "consumption", "tenant-requests")
 
 		// subscription rate limits
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
 			"x-ms-ratelimit-remaining-subscription-reads", "subscription", "reads")
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
 			"x-ms-ratelimit-remaining-subscription-writes", "subscription", "writes")
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
 			"x-ms-ratelimit-remaining-subscription-resource-requests", "subscription", "resourceRequests")
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
 			"x-ms-ratelimit-remaining-subscription-resource-entities-read", "subscription", "resource-entities-read")
 
 		// tenant rate limits
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
 			"x-ms-ratelimit-remaining-tenant-reads", "tenant", "reads")
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
 			"x-ms-ratelimit-remaining-tenant-writes", "tenant", "writes")
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
 			"x-ms-ratelimit-remaining-tenant-resource-requests", "tenant", "resource-requests")
-		s.collectAzureAPIRateLimitMetric(resp, hostname, subscription_id,
+		s.collectAzureAPIRateLimitMetric(resp, hostname, subscriptionID,
 			"x-ms-ratelimit-remaining-tenant-resource-entities-read", "tenant", "resource-entities-read")
 
 		return resp, nil
