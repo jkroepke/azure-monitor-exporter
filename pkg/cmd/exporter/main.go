@@ -35,6 +35,7 @@ import (
 	webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
 )
 
+//nolint:cyclop
 func Run() int {
 	reg := prometheus.NewRegistry()
 
