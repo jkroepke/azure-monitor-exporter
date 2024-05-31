@@ -20,6 +20,7 @@ issues:
         - dupword
         - dupl
         - funlen
+        - mnd
         - err113
 
 linters-settings:
