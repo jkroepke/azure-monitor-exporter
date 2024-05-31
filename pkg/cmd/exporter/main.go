@@ -35,23 +35,20 @@ import (
 	webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
 )
 
-var (
-	webConfig  = webflag.AddFlags(kingpin.CommandLine, ":8080")
-	logRetries = kingpin.Flag("log.retries", "Log Azure REST API retries").Default("false").Envar("AZURE_MONITOR_EXPORTER_LOG_RETRIES").Bool()
-	logger     = log.NewNopLogger()
-)
-
 func Run() int {
 	reg := prometheus.NewRegistry()
 
 	kingpin.Version(version.Print("azure-monitor-exporter"))
+
+	webConfig := webflag.AddFlags(kingpin.CommandLine, ":8080")
+	logRetries := kingpin.Flag("log.retries", "Log Azure REST API retries").Default("false").Envar("AZURE_MONITOR_EXPORTER_LOG_RETRIES").Bool()
 
 	promlogConfig := &promlog.Config{}
 	flag.AddFlags(kingpin.CommandLine, promlogConfig)
 	kingpin.HelpFlag.Short('h')
 	kingpin.Parse()
 
-	logger = promlog.New(promlogConfig)
+	logger := promlog.New(promlogConfig)
 
 	exporterTracing := tracing.New(reg, http.DefaultTransport)
 	httpClient := &http.Client{
