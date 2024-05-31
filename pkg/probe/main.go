@@ -318,9 +318,9 @@ func (p *Probe) fetchMetrics(ctx context.Context, resources *Resources, ch chan<
 							}
 
 							prometheusLabels := map[string]string{
-								"subscriptionID": subscriptionID,
-								"region":         *metric.ResourceRegion,
-								"resourceID":     *metric.ResourceID,
+								"subscription_id": subscriptionID,
+								"region":          *metric.ResourceRegion,
+								"instance":        *metric.ResourceID,
 							}
 
 							for _, label := range metricTimeSeries.MetadataValues {

@@ -39,7 +39,7 @@ func New(registry prometheus.Registerer, transport http.RoundTripper) *AzureSDKS
 		},
 		[]string{
 			"endpoint",
-			"subscriptionID",
+			"subscription_id",
 			"scope",
 			"type",
 		},
@@ -108,10 +108,10 @@ func (s *AzureSDKStatistics) collectAzureAPIRateLimitMetric(r *http.Response, ho
 	if value, err := strconv.ParseInt(headerValue, 10, 64); err == nil {
 		// single value
 		s.AzureAPIRateLimit.With(prometheus.Labels{
-			"endpoint":       hostname,
-			"subscriptionID": subscriptionID,
-			"scope":          scopeLabel,
-			"type":           typeLabel,
+			"endpoint":        hostname,
+			"subscription_id": subscriptionID,
+			"scope":           scopeLabel,
+			"type":            typeLabel,
 		}).Set(float64(value))
 	} else if strings.Contains(headerValue, ":") {
 		// multi value (comma separated eg "QueriesPerHour:496,QueriesPerMin:37,QueriesPer10Sec:11")
@@ -122,10 +122,10 @@ func (s *AzureSDKStatistics) collectAzureAPIRateLimitMetric(r *http.Response, ho
 
 				if value, err = strconv.ParseInt(quotaValue, 10, 64); err == nil {
 					s.AzureAPIRateLimit.With(prometheus.Labels{
-						"endpoint":       hostname,
-						"subscriptionID": subscriptionID,
-						"scope":          scopeLabel,
-						"type":           fmt.Sprintf("%s.%s", typeLabel, quotaName),
+						"endpoint":        hostname,
+						"subscription_id": subscriptionID,
+						"scope":           scopeLabel,
+						"type":            fmt.Sprintf("%s.%s", typeLabel, quotaName),
 					}).Set(float64(value))
 				}
 			}
