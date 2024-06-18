@@ -93,6 +93,64 @@ func TestProbe(t *testing.T) {
 			},
 		},
 		{
+			name:          "simple probe with spaces in metrics",
+			subscriptions: make([]string, 0),
+			request: &http.Request{
+				URL: &url.URL{
+					RawQuery: "resourceType=Microsoft.Compute/virtualMachines&metricName=Percentage CPU&query=Resources",
+				},
+			},
+			resourceGraphQueryResponse: armresourcegraph.QueryResponse{
+				Count:           to.Ptr(int64(1)),
+				TotalRecords:    to.Ptr(int64(1)),
+				ResultTruncated: to.Ptr(armresourcegraph.ResultTruncated("false")),
+				Data: []any{
+					map[string]any{
+						"id":             "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock/providers/Microsoft.Compute/virtualMachines/vm1",
+						"location":       "westeurope",
+						"subscriptionId": "00000000-0000-0000-0000-000000000000",
+					},
+				},
+			},
+			metricResults: azmetrics.MetricResults{
+				Values: []azmetrics.MetricData{
+					{
+						EndTime:        to.Ptr("2024-01-01T00:00:00Z"),
+						Interval:       to.Ptr("PT5M"),
+						Namespace:      to.Ptr("microsoft.compute/virtualmachines"),
+						ResourceID:     to.Ptr("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock/providers/Microsoft.Compute/virtualMachines/vm1"),
+						ResourceRegion: to.Ptr("westeurope"),
+						StartTime:      to.Ptr("2024-01-01T01:00:00Z"),
+						Values: []azmetrics.Metric{
+							{
+								ID: to.Ptr("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock/providers/Microsoft.Compute/virtualMachines/vm1/providers/Microsoft.Insights/metrics/VmAvailabilityMetric"),
+								Name: &azmetrics.LocalizableString{
+									Value:          to.Ptr("Percentage CPU"),
+									LocalizedValue: to.Ptr("Percentage CPU"),
+								},
+								DisplayDescription: to.Ptr("The percentage of allocated compute units that are currently in use by the Virtual Machine(s)"),
+								Unit:               to.Ptr(azmetrics.MetricUnitCount),
+								TimeSeries: []azmetrics.TimeSeriesElement{
+									{
+										MetadataValues: []azmetrics.MetadataValue{},
+										Data: []azmetrics.MetricValue{
+											{
+												TimeStamp: to.Ptr(time.Date(2024, 1, 1, 0, 30, 0, 0, time.UTC)),
+												Average:   to.Ptr(1.0),
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedMetrics: []string{
+				`azure_monitor_microsoft_compute_virtualmachines_percentagecpu_average_count{instance="/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-mock/providers/Microsoft.Compute/virtualMachines/vm1",region="westeurope",subscription_id="00000000-0000-0000-0000-000000000000"} 1`,
+			},
+		},
+		{
 			name:          "lager probe",
 			subscriptions: make([]string, 0),
 			request: &http.Request{
