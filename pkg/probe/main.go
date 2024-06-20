@@ -358,7 +358,7 @@ func (p *Probe) fetchMetrics(ctx context.Context, resources *Resources, ch chan<
 											"azure_monitor",
 											strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(*metric.Namespace), ".", "_"), "/", "_"),
 											fmt.Sprintf("%s_%s_%s",
-												strings.ToLower(*metricValue.Name.Value),
+												strings.ReplaceAll(strings.ToLower(*metricValue.Name.Value), " ", ""),
 												metricType,
 												strings.ToLower(string(*metricValue.Unit)),
 											),
