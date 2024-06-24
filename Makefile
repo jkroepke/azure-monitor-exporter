@@ -26,7 +26,7 @@ help: ## show this help.
 
 .PHONY: clean
 clean: ## clean builds dir
-	@rm -rf openvpn-auth-oauth2 openvpn-auth-oauth2.exe dist/
+	@rm -rf azure-monitor-exporter azure-monitor-exporter.exe dist/
 
 .PHONY: check
 check: test lint golangci ## Run all checks locally
@@ -38,24 +38,24 @@ update: ## Run dependency updates
 
 .PHONY: build
 ifeq ($(OS),Windows_NT)
-build: clean openvpn-auth-oauth2.exe  ## Build openvpn-auth-oauth2
+build: clean azure-monitor-exporter.exe  ## Build azure-monitor-exporter
 else
-build: clean openvpn-auth-oauth2
+build: clean azure-monitor-exporter
 endif
 
 
-openvpn-auth-oauth2:
-	@go build -o openvpn-auth-oauth2 .
+azure-monitor-exporter:
+	@go build -o azure-monitor-exporter .
 
-openvpn-auth-oauth2.exe:
-	@go build -o openvpn-auth-oauth2.exe .
+azure-monitor-exporter.exe:
+	@go build -o azure-monitor-exporter.exe .
 
 .Phony: build-debug
-build-debug: ## Build openvpn-auth-oauth2 with debug flags
-	@go build -gcflags="-l=4 -m=2" -o openvpn-auth-oauth2 .
+build-debug: ## Build azure-monitor-exporter with debug flags
+	@go build -gcflags="-l=4 -m=2" -o azure-monitor-exporter .
 
 .PHONY: test
-test:  ## Test openvpn-auth-oauth2
+test:  ## Test azure-monitor-exporter
 	@go test -race ./...
 
 .PHONY: lint
