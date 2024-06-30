@@ -2,10 +2,12 @@ package probe
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/monitor/query/azmetrics"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/go-kit/log"
 	"github.com/jkroepke/azure-monitor-exporter/pkg/cache"
 	"github.com/prometheus/client_golang/prometheus"
@@ -21,7 +23,10 @@ type Probe struct {
 	logger  log.Logger
 	cred    azcore.TokenCredential
 
-	httpClient *http.Client
+	resourceGraphClient  *armresourcegraph.Client
+	metricsClientOptions *azmetrics.ClientOptions
+	metricsClients       map[string]*azmetrics.Client
+	metricsClientMu      *sync.Mutex
 
 	subscriptions []string
 	config        *Config

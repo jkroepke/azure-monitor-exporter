@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -30,11 +31,27 @@ func New(
 	subscriptions []string,
 	queryCache *cache.Cache[Resources],
 ) (*Probe, error) {
+	clientOptions := azcore.ClientOptions{
+		Transport: httpClient,
+	}
+
+	resourceGraphClient, err := armresourcegraph.NewClient(cred, &arm.ClientOptions{
+		ClientOptions: clientOptions,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error creating resource graph client: %w", err)
+	}
+
 	probe := &Probe{
-		request:    request,
-		logger:     logger,
-		cred:       cred,
-		httpClient: httpClient,
+		request: request,
+		logger:  logger,
+
+		resourceGraphClient: resourceGraphClient,
+		metricsClientOptions: &azmetrics.ClientOptions{
+			ClientOptions: clientOptions,
+		},
+		metricsClients:  make(map[string]*azmetrics.Client),
+		metricsClientMu: &sync.Mutex{},
 
 		subscriptions: subscriptions,
 		queryCache:    queryCache,
@@ -142,16 +159,8 @@ func (p *Probe) getResources(ctx context.Context) (*Resources, error) {
 //
 //nolint:gocognit,cyclop
 func (p *Probe) queryResources(ctx context.Context) (*Resources, error) {
-	client, err := armresourcegraph.NewClient(p.cred, &arm.ClientOptions{
-		ClientOptions: azcore.ClientOptions{
-			Transport: p.httpClient,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("error creating resource graph client: %w", err)
-	}
-
 	var (
+		err       error
 		skipToken string
 		response  armresourcegraph.ClientResourcesResponse
 	)
@@ -171,7 +180,7 @@ func (p *Probe) queryResources(ctx context.Context) (*Resources, error) {
 			p.config.Query, strings.ToLower(p.config.ResourceType),
 		)
 
-		response, err = client.Resources(ctx, armresourcegraph.QueryRequest{
+		response, err = p.resourceGraphClient.Resources(ctx, armresourcegraph.QueryRequest{
 			Options: &armresourcegraph.QueryRequestOptions{
 				ResultFormat: to.Ptr(armresourcegraph.ResultFormatObjectArray),
 				SkipToken:    to.Ptr(skipToken),
@@ -288,6 +297,7 @@ func (p *Probe) queryResources(ctx context.Context) (*Resources, error) {
 //nolint:gocognit,cyclop
 func (p *Probe) fetchMetrics(ctx context.Context, resources *Resources, ch chan<- prometheus.Metric) error {
 	var (
+		ok     bool
 		client *azmetrics.Client
 		err    error
 		resp   azmetrics.QueryResourcesResponse
@@ -297,17 +307,22 @@ func (p *Probe) fetchMetrics(ctx context.Context, resources *Resources, ch chan<
 		return errors.New("resources is nil")
 	}
 
-	for locations, subscriptions := range resources.Resources {
-		metricsEndpoint := fmt.Sprintf("https://%s.metrics.monitor.azure.com", locations)
+	for location, subscriptions := range resources.Resources {
+		p.metricsClientMu.Lock()
 
-		client, err = azmetrics.NewClient(metricsEndpoint, p.cred, &azmetrics.ClientOptions{
-			ClientOptions: azcore.ClientOptions{
-				Transport: p.httpClient,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("error creating metrics client: %w", err)
+		if client, ok = p.metricsClients[location]; !ok {
+			metricsEndpoint := fmt.Sprintf("https://%s.metrics.monitor.azure.com", location)
+			client, err = azmetrics.NewClient(metricsEndpoint, p.cred, p.metricsClientOptions)
+			if err != nil {
+				p.metricsClientMu.Unlock()
+
+				return fmt.Errorf("error creating metrics client: %w", err)
+			}
+
+			p.metricsClients[location] = client
 		}
+
+		p.metricsClientMu.Unlock()
 
 		for subscriptionID, resourceIDs := range subscriptions {
 			for {
