@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/jkroepke/azure-monitor-exporter/pkg/cache"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/exp/maps"
 )
 
 func New(
@@ -72,7 +73,7 @@ func (p *Probe) Collect(ch chan<- prometheus.Metric) {
 
 	startTime := time.Now()
 
-	resources, err := p.getResources(ctx)
+	azureResources, err := p.getResources(ctx)
 
 	ch <- prometheus.MustNewConstMetric(p.scrapeDurationDesc, prometheus.GaugeValue, time.Since(startTime).Seconds(), "query_resources")
 
@@ -86,7 +87,7 @@ func (p *Probe) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	startTime = time.Now()
-	err = p.fetchMetrics(ctx, resources, ch)
+	err = p.fetchMetrics(ctx, azureResources, ch)
 
 	ch <- prometheus.MustNewConstMetric(p.scrapeDurationDesc, prometheus.GaugeValue, time.Since(startTime).Seconds(), "fetch_metrics")
 
@@ -155,7 +156,10 @@ func (p *Probe) queryResources(ctx context.Context) (*Resources, error) {
 		response  armresourcegraph.ClientResourcesResponse
 	)
 
-	resources := Resources{}
+	resources := Resources{
+		Resources:        make(map[string]map[string][]string),
+		AdditionalLabels: make(map[string]map[string]string),
+	}
 
 	subscriptions := p.subscriptions
 	if p.config.Subscriptions != nil {
@@ -163,7 +167,7 @@ func (p *Probe) queryResources(ctx context.Context) (*Resources, error) {
 	}
 
 	for {
-		query := fmt.Sprintf("%s\n| where type == '%s' \n| project id, subscriptionId, location",
+		query := fmt.Sprintf("%s\n| where type == '%s' \n| project-keep id, subscriptionId, location, label_*",
 			p.config.Query, strings.ToLower(p.config.ResourceType),
 		)
 
@@ -179,12 +183,16 @@ func (p *Probe) queryResources(ctx context.Context) (*Resources, error) {
 			return nil, fmt.Errorf("error querying resource graph '%q': %w", query, err)
 		}
 
-		if *response.ResultTruncated != "false" {
+		if response.ResultTruncated == nil || response.Data == nil || response.Count == nil {
+			return nil, errors.New("error querying resource graph: unexpected response")
+		}
+
+		if *response.ResultTruncated == armresourcegraph.ResultTruncatedTrue {
 			_ = level.Warn(p.logger).Log("msg", "Result truncated", "query", query)
 		}
 
 		if *response.Count == 0 {
-			break
+			return nil, errors.New("error querying resource graph: no rows returned")
 		}
 
 		rows, ok := response.Data.([]any)
@@ -203,42 +211,65 @@ func (p *Probe) queryResources(ctx context.Context) (*Resources, error) {
 
 		for _, field := range []string{"subscriptionId", "location", "id"} {
 			if _, ok = row[field]; !ok {
-				return nil, fmt.Errorf("error querying resource graph: missing field %s", field)
+				return nil, fmt.Errorf("error querying resource graph: missing field %s. Availible fields: %v", field, maps.Keys(row))
 			}
 		}
 
+		var (
+			resultRow      map[string]any
+			subscriptionID string
+			location       string
+			labelValue     string
+			resourceID     string
+		)
+
 		for _, row := range rows {
-			row, ok := row.(map[string]any)
+			resultRow, ok = row.(map[string]any)
 			if !ok {
 				return nil, fmt.Errorf("error querying resource graph: unexpected row type: %+v", row)
 			}
 
-			subscriptionID, ok := row["subscriptionId"].(string)
+			subscriptionID, ok = resultRow["subscriptionId"].(string)
 			if !ok {
 				return nil, fmt.Errorf("error querying resource graph: unexpected subscriptionId type: %+v", rows[0])
 			}
 
-			location, ok := row["location"].(string)
+			location, ok = resultRow["location"].(string)
 			if !ok {
 				return nil, fmt.Errorf("error querying resource graph: unexpected location type: %+v", rows[0])
 			}
 
-			id, ok := row["id"].(string)
+			resourceID, ok = resultRow["id"].(string)
 			if !ok {
 				return nil, fmt.Errorf("error querying resource graph: unexpected id type: %+v", rows[0])
 			}
 
-			if _, ok := resources[location]; !ok {
-				resources[location] = make(map[string][]string)
+			if _, ok = resources.Resources[location]; !ok {
+				resources.Resources[location] = make(map[string][]string, len(subscriptions))
 			}
 
-			if _, ok := resources[location][subscriptionID]; !ok {
-				resources[location][subscriptionID] = make([]string, 0, len(rows))
+			if _, ok = resources.Resources[location][subscriptionID]; !ok {
+				resources.Resources[location][subscriptionID] = make([]string, 0, len(rows))
 			}
 
-			resources[location][subscriptionID] = append(
-				resources[location][subscriptionID],
-				id,
+			if len(resultRow)-3 > 0 {
+				resources.AdditionalLabels[resourceID] = make(map[string]string, len(resultRow)-3)
+
+				for key, value := range resultRow {
+					if strings.HasPrefix(key, "label_") {
+						labelValue, ok = value.(string)
+						if !ok {
+							return nil, fmt.Errorf("error querying resource graph: unexpected id type: %+v", rows[0])
+						}
+
+						resources.AdditionalLabels[resourceID][key[6:]] = labelValue
+					}
+				}
+			}
+
+			resources.Resources[location][subscriptionID] = append(
+				resources.Resources[location][subscriptionID],
+				resourceID,
 			)
 		}
 
@@ -266,7 +297,7 @@ func (p *Probe) fetchMetrics(ctx context.Context, resources *Resources, ch chan<
 		return errors.New("resources is nil")
 	}
 
-	for locations, subscriptions := range *resources {
+	for locations, subscriptions := range resources.Resources {
 		metricsEndpoint := fmt.Sprintf("https://%s.metrics.monitor.azure.com", locations)
 
 		client, err = azmetrics.NewClient(metricsEndpoint, p.cred, &azmetrics.ClientOptions{
@@ -310,30 +341,39 @@ func (p *Probe) fetchMetrics(ctx context.Context, resources *Resources, ch chan<
 					return fmt.Errorf("error querying metrics: %w", err)
 				}
 
+				latestTimestamp := time.Time{}
+				latestMetric := map[string]*float64{}
+
 				for _, metric := range resp.Values {
+					prometheusMetricNamespace := "azure_monitor_" + strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(*metric.Namespace), ".", "_"), "/", "_")
+
+					prometheusLabels := map[string]string{
+						"subscription_id": subscriptionID,
+						"region":          *metric.ResourceRegion,
+						"instance":        *metric.ResourceID,
+					}
+
+					for labelKey, labelValue := range resources.AdditionalLabels[*metric.ResourceID] {
+						prometheusLabels[labelKey] = labelValue
+					}
+
+					latestTimestamp = time.Time{}
+					latestMetric = map[string]*float64{
+						"total":   nil,
+						"average": nil,
+						"count":   nil,
+						"minimum": nil,
+						"maximum": nil,
+					}
+
 					for _, metricValue := range metric.Values {
 						for _, metricTimeSeries := range metricValue.TimeSeries {
 							if len(metricTimeSeries.Data) == 0 {
 								continue
 							}
 
-							prometheusLabels := map[string]string{
-								"subscription_id": subscriptionID,
-								"region":          *metric.ResourceRegion,
-								"instance":        *metric.ResourceID,
-							}
-
 							for _, label := range metricTimeSeries.MetadataValues {
 								prometheusLabels[*label.Name.Value] = *label.Value
-							}
-
-							latestTimestamp := time.Time{}
-							latestMetric := map[string]*float64{
-								"total":   nil,
-								"average": nil,
-								"count":   nil,
-								"minimum": nil,
-								"maximum": nil,
 							}
 
 							for _, data := range metricTimeSeries.Data {
@@ -346,31 +386,30 @@ func (p *Probe) fetchMetrics(ctx context.Context, resources *Resources, ch chan<
 									latestMetric["maximum"] = data.Maximum
 								}
 							}
+						}
 
-							for metricType, value := range latestMetric {
-								if value == nil {
-									continue
-								}
-
-								ch <- prometheus.MustNewConstMetric(
-									prometheus.NewDesc(
-										prometheus.BuildFQName(
-											"azure_monitor",
-											strings.ReplaceAll(strings.ReplaceAll(strings.ToLower(*metric.Namespace), ".", "_"), "/", "_"),
-											fmt.Sprintf("%s_%s_%s",
-												strings.ReplaceAll(strings.ToLower(*metricValue.Name.Value), " ", ""),
-												metricType,
-												strings.ToLower(string(*metricValue.Unit)),
-											),
-										),
-										fmt.Sprintf("%s: %s", *metricValue.Name.LocalizedValue, *metricValue.DisplayDescription),
-										nil,
-										prometheusLabels,
-									),
-									prometheus.GaugeValue,
-									*value,
-								)
+						for metricType, value := range latestMetric {
+							if value == nil {
+								continue
 							}
+
+							ch <- prometheus.MustNewConstMetric(
+								prometheus.NewDesc(
+									prometheus.BuildFQName(
+										prometheusMetricNamespace,
+										strings.ReplaceAll(strings.ToLower(*metricValue.Name.Value), " ", ""),
+										fmt.Sprintf("%s_%s",
+											metricType,
+											strings.ToLower(string(*metricValue.Unit)),
+										),
+									),
+									fmt.Sprintf("%s: %s", *metricValue.Name.LocalizedValue, *metricValue.DisplayDescription),
+									nil,
+									prometheusLabels,
+								),
+								prometheus.GaugeValue,
+								*value,
+							)
 						}
 					}
 				}

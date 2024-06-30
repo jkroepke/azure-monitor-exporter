@@ -11,7 +11,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type Resources map[string]map[string][]string
+type Resources struct {
+	Resources        map[string]map[string][]string
+	AdditionalLabels map[string]map[string]string
+}
 
 type Probe struct {
 	request *http.Request

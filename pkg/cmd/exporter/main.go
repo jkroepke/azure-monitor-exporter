@@ -102,7 +102,7 @@ func Run() int {
 		versionCollector.NewCollector("azure_monitor_exporter"),
 	)
 
-	queryCache := cache.NewCache[probe.Resources]()
+	queryCache := cache.NewCache[probe.Request]()
 
 	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{
 		Registry: reg,
