@@ -8,16 +8,16 @@ import (
 	"github.com/go-kit/log/level"
 )
 
-func (p *Probe) getProbeTimeout() time.Duration {
+func (r *Request) getProbeTimeout() time.Duration {
 	var (
 		err     error
 		timeout int64
 	)
 
-	if v := p.request.Header.Get("X-Prometheus-Scrape-Timeout-Seconds"); v != "" {
+	if v := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds"); v != "" {
 		timeout, err = strconv.ParseInt(v, 10, 64)
 		if err != nil {
-			_ = level.Warn(p.logger).Log("msg", fmt.Sprintf("Couldn't parse X-Prometheus-Scrape-Timeout-Seconds: %q. Defaulting timeout to %d", v, 10))
+			_ = level.Warn(r.probe.logger).Log("msg", fmt.Sprintf("Couldn't parse X-Prometheus-Scrape-Timeout-Seconds: %q. Defaulting timeout to %d", v, 10))
 		}
 	}
 

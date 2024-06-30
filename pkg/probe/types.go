@@ -2,7 +2,6 @@ package probe
 
 import (
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -13,28 +12,33 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type Resources struct {
-	Resources        map[string]map[string][]string
-	AdditionalLabels map[string]map[string]string
-}
-
 type Probe struct {
-	request *http.Request
-	logger  log.Logger
-	cred    azcore.TokenCredential
-
-	resourceGraphClient  *armresourcegraph.Client
-	metricsClientOptions *azmetrics.ClientOptions
-	metricsClients       map[string]*azmetrics.Client
-	metricsClientMu      *sync.Mutex
+	logger log.Logger
+	cred   azcore.TokenCredential
 
 	subscriptions []string
-	config        *Config
 
-	queryCache *cache.Cache[Resources]
+	resourceGraphClient *armresourcegraph.Client
+	azClientOptions     azcore.ClientOptions
+
+	queryCache         *cache.Cache[Resources]
+	metricsClientCache *cache.Cache[azmetrics.Client]
 
 	scrapeDurationDesc *prometheus.Desc
 	scrapeSuccessDesc  *prometheus.Desc
+}
+
+type Request struct {
+	http.Request
+	log.Logger
+
+	config *Config
+	probe  *Probe
+}
+
+type Resources struct {
+	Resources        map[string]map[string][]string
+	AdditionalLabels map[string]map[string]string
 }
 
 type Config struct {

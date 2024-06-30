@@ -3,8 +3,7 @@ package probe_test
 import (
 	"fmt"
 	"net/http"
-	"net/url"
-	"strings"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -18,7 +17,6 @@ import (
 	"github.com/jkroepke/azure-monitor-exporter/pkg/probe"
 	"github.com/jkroepke/azure-monitor-exporter/pkg/testutil"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/expfmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +27,7 @@ func TestProbe(t *testing.T) {
 	testCases := []struct {
 		name                       string
 		subscriptions              []string
-		request                    *http.Request
+		request                    string
 		resourceGraphQueryResponse armresourcegraph.QueryResponse
 		metricResults              azmetrics.MetricResults
 		expectedMetrics            []string
@@ -37,11 +35,7 @@ func TestProbe(t *testing.T) {
 		{
 			name:          "simple probe",
 			subscriptions: make([]string, 0),
-			request: &http.Request{
-				URL: &url.URL{
-					RawQuery: "resourceType=Microsoft.Compute/virtualMachines&metricName=VmAvailabilityMetric&query=Resources",
-				},
-			},
+			request:       "/probe?resourceType=Microsoft.Compute/virtualMachines&metricName=VmAvailabilityMetric&query=Resources",
 			resourceGraphQueryResponse: armresourcegraph.QueryResponse{
 				Count:           to.Ptr(int64(1)),
 				TotalRecords:    to.Ptr(int64(1)),
@@ -95,11 +89,7 @@ func TestProbe(t *testing.T) {
 		{
 			name:          "simple probe with spaces in metrics",
 			subscriptions: make([]string, 0),
-			request: &http.Request{
-				URL: &url.URL{
-					RawQuery: "resourceType=Microsoft.Compute/virtualMachines&metricName=Percentage CPU&query=Resources",
-				},
-			},
+			request:       "/probe?resourceType=Microsoft.Compute/virtualMachines&metricName=Percentage%20CPU&query=Resources",
 			resourceGraphQueryResponse: armresourcegraph.QueryResponse{
 				Count:           to.Ptr(int64(1)),
 				TotalRecords:    to.Ptr(int64(1)),
@@ -153,11 +143,7 @@ func TestProbe(t *testing.T) {
 		{
 			name:          "lager probe",
 			subscriptions: make([]string, 0),
-			request: &http.Request{
-				URL: &url.URL{
-					RawQuery: "resourceType=Microsoft.Compute/virtualMachines&metricName=VmAvailabilityMetric&query=Resources",
-				},
-			},
+			request:       "/probe?resourceType=Microsoft.Compute/virtualMachines&metricName=VmAvailabilityMetric&query=Resources",
 			resourceGraphQueryResponse: func() armresourcegraph.QueryResponse {
 				data := make([]map[string]any, 50)
 
@@ -243,25 +229,18 @@ func TestProbe(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			probeHandler, err := probe.New(log.NewNopLogger(), httpClient, tc.request, cred, tc.subscriptions, cache.NewCache[probe.Resources]())
+			probeHandler, err := probe.New(log.NewNopLogger(), httpClient, cred, tc.subscriptions,
+				cache.NewCache[probe.Resources](), cache.NewCache[azmetrics.Client]())
 			require.NoError(t, err)
 
-			reg := prometheus.NewRegistry()
-			reg.MustRegister(probeHandler)
+			request := httptest.NewRequest(http.MethodGet, tc.request, nil)
+			recorder := httptest.NewRecorder()
 
-			metrics, err := reg.Gather()
-			require.NoError(t, err)
+			probeHandler.ServeHTTP(prometheus.NewRegistry())(recorder, request)
 
-			sb := &strings.Builder{}
-			for _, metric := range metrics {
-				_, err = expfmt.MetricFamilyToText(sb, metric)
-				require.NoError(t, err)
-			}
+			require.Equal(t, http.StatusOK, recorder.Code)
 
-			require.NoError(t, err)
-
-			metricsText := sb.String()
-
+			metricsText := recorder.Body.String()
 			assert.Contains(t, metricsText, "azure_monitor_scrape_collector_success 1")
 
 			for _, expectedMetric := range tc.expectedMetrics {

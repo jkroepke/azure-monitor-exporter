@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	azlog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/monitor/query/azmetrics"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/subscription/armsubscription"
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
@@ -102,30 +103,66 @@ func Run() int {
 		versionCollector.NewCollector("azure_monitor_exporter"),
 	)
 
-	queryCache := cache.NewCache[probe.Request]()
+	queryCache := cache.NewCache[probe.Resources]()
+	metricsClientCache := cache.NewCache[azmetrics.Client]()
 
+	probeCollector, err := probe.New(logger, httpClient, cred, subscriptions, queryCache, metricsClientCache)
+	if err != nil {
+		_ = level.Error(logger).Log("msg", "Error creating probe collector", "err", err)
+
+		return 1
+	}
+
+	http.HandleFunc("/probe", probeCollector.ServeHTTP(reg))
 	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{
 		Registry: reg,
 		ErrorLog: stdlog.New(log.NewStdlibAdapter(logger), "ERROR: ", stdlog.LstdFlags),
 	}))
-	http.HandleFunc("/probe", func(w http.ResponseWriter, r *http.Request) {
-		probeCollector, err := probe.New(logger, httpClient, r, cred, subscriptions, queryCache)
-		if err != nil {
-			_ = level.Error(logger).Log("msg", "Error creating probe", "err", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
 
-			return
+	landingPage, err := newLandingPage()
+	if err != nil {
+		_ = level.Error(logger).Log("err", err)
+
+		return 1
+	}
+
+	http.Handle("/", landingPage)
+
+	srv := &http.Server{
+		ReadHeaderTimeout: time.Second * 3,
+		ErrorLog:          stdlog.New(log.NewStdlibAdapter(logger), "ERROR: ", stdlog.LstdFlags),
+	}
+
+	// graceful shutdown on SIGTERM or SIGINT signal
+	go func() {
+		termCh := make(chan os.Signal, 1)
+		signal.Notify(termCh, os.Interrupt, syscall.SIGTERM)
+		<-termCh
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		_ = srv.Shutdown(ctx)
+	}()
+
+	return startWebServer(srv, webConfig, logger)
+}
+
+func startWebServer(srv *http.Server, webConfig *web.FlagConfig, logger log.Logger) int {
+	if err := web.ListenAndServe(srv, webConfig, logger); err != nil {
+		if errors.Is(err, http.ErrServerClosed) {
+			return 0
 		}
 
-		registry := prometheus.NewRegistry()
-		registry.MustRegister(probeCollector)
+		_ = level.Error(logger).Log("msg", "Error starting HTTP server", "err", err)
 
-		promhttp.HandlerFor(registry, promhttp.HandlerOpts{
-			Registry: reg,
-			ErrorLog: stdlog.New(log.NewStdlibAdapter(logger), "ERROR: ", stdlog.LstdFlags),
-		}).ServeHTTP(w, r)
-	})
+		return 1
+	}
 
+	return 0
+}
+
+func newLandingPage() (*web.LandingPageHandler, error) {
 	landingPage, err := web.NewLandingPage(web.LandingConfig{
 		Name:        "azure-monitor-exporter",
 		Description: "Prometheus Exporter for Azure Monitor",
@@ -179,41 +216,10 @@ func Run() int {
 		},
 	})
 	if err != nil {
-		_ = level.Error(logger).Log("err", err)
-
-		return 1
+		return nil, fmt.Errorf("failed to create landing page: %w", err)
 	}
 
-	http.Handle("/", landingPage)
-
-	srv := &http.Server{
-		ReadHeaderTimeout: time.Second * 3,
-		ErrorLog:          stdlog.New(log.NewStdlibAdapter(logger), "ERROR: ", stdlog.LstdFlags),
-	}
-
-	// graceful shutdown on SIGTERM or SIGINT signal
-	go func() {
-		termCh := make(chan os.Signal, 1)
-		signal.Notify(termCh, os.Interrupt, syscall.SIGTERM)
-		<-termCh
-
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		_ = srv.Shutdown(ctx)
-	}()
-
-	if err := web.ListenAndServe(srv, webConfig, logger); err != nil {
-		if errors.Is(err, http.ErrServerClosed) {
-			return 0
-		}
-
-		_ = level.Error(logger).Log("msg", "Error starting HTTP server", "err", err)
-
-		return 1
-	}
-
-	return 0
+	return landingPage, nil
 }
 
 func discoverSubscriptions(ctx context.Context, cred azcore.TokenCredential, httpClient *http.Client) ([]string, error) {
