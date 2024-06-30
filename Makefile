@@ -8,7 +8,7 @@ CYAN   := $(shell echo -e "\033[0;36m")
 RESET  := $(shell echo -e "\033[0m")
 
 # renovate: github=golangci/golangci-lint
-GO_LINT_CI_VERSION := v1.59.0
+GO_LINT_CI_VERSION := v1.59.1
 
 ##
 # Targets
