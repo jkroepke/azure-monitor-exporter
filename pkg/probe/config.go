@@ -2,12 +2,14 @@ package probe
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/sosodev/duration"
 )
 
 //nolint:cyclop
@@ -57,6 +59,21 @@ func GetConfigFromRequest(request *http.Request) (*Config, error) {
 		return nil, errors.New("'interval' parameter must be specified once")
 	}
 
+	if len(query["timespan"]) == 1 {
+		timespan, err := duration.Parse(query.Get("timespan"))
+		if err != nil {
+			return nil, fmt.Errorf("'timespan' parameter must be a ISO8601 duration: %w", err)
+		}
+
+		endDate := time.Now()
+		startDate := endDate.Add(-timespan.ToTimeDuration())
+
+		probeConfig.StartTime = to.Ptr(startDate.Format(time.RFC3339))
+		probeConfig.EndTime = to.Ptr(endDate.Format(time.RFC3339))
+	} else if len(query["timespan"]) > 1 {
+		return nil, errors.New("'timespan' parameter must be specified once")
+	}
+
 	if len(query["filter"]) == 1 {
 		probeConfig.Filter = to.Ptr(query.Get("filter"))
 	} else if len(query["filter"]) > 1 {
@@ -91,7 +108,7 @@ func GetConfigFromRequest(request *http.Request) (*Config, error) {
 
 		probeConfig.Top = to.Ptr(int32(topInt64))
 	} else if len(query["top"]) >= 1 {
-		return nil, errors.New("'top' parameter must be specified once")
+		probeConfig.Top = to.Ptr(int32(1000))
 	}
 
 	if len(query["queryCacheExpiration"]) == 1 {
