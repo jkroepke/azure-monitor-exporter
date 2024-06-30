@@ -1,4 +1,4 @@
-package probe
+package probe_test
 
 import (
 	"fmt"
@@ -14,6 +14,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/go-kit/log"
 	"github.com/jkroepke/azure-monitor-exporter/pkg/cache"
+	"github.com/jkroepke/azure-monitor-exporter/pkg/probe"
 	"github.com/jkroepke/azure-monitor-exporter/pkg/testutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
@@ -104,8 +105,8 @@ func BenchmarkFull(b *testing.B) {
 	b.StartTimer()
 
 	for range b.N {
-		probeHandler, err := New(log.NewNopLogger(), httpClient, cred, subscriptions,
-			cache.NewCache[Resources](), cache.NewCache[azmetrics.Client]())
+		probeHandler, err := probe.New(log.NewNopLogger(), httpClient, cred, subscriptions,
+			cache.NewCache[probe.Resources](), cache.NewCache[azmetrics.Client]())
 		require.NoError(b, err)
 
 		request := httptest.NewRequest(http.MethodGet, requestURL, nil)
