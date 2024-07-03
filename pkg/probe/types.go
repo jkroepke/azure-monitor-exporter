@@ -38,8 +38,10 @@ type Request struct {
 
 type Resources struct {
 	Resources        map[string]map[string][]string
-	AdditionalLabels map[string]map[string]string
+	AdditionalLabels AdditionalLabels
 }
+
+type AdditionalLabels map[string]map[string]string
 
 type Config struct {
 	Subscriptions   []string
