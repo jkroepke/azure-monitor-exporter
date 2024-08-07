@@ -15,7 +15,7 @@ require (
 	github.com/prometheus/exporter-toolkit v0.11.0
 	github.com/sosodev/duration v1.3.1
 	github.com/stretchr/testify v1.9.0
-	golang.org/x/exp v0.0.0-20240613232115-7f521ea00fb8
+	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56
 )
 
 require (
